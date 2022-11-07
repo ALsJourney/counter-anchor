@@ -21,6 +21,7 @@ describe("counter", () => {
         wallet2 = await createWallet(connection, 1);
         await initializeAccount(program, wallet1);
         await initializeAccount(program, wallet2);
+
     })
     // Helper function
     const getAllAccountsByAuthority = async (
@@ -64,7 +65,7 @@ describe("counter", () => {
             .accounts(
                 {
                     myAccount: accountKeypair.publicKey,
-                    authority: accountKeypair.publicKey,
+                    authority: authority.publicKey,
                     systemProgram: anchor.web3.SystemProgram.programId,
                 })
             .signers([authority, accountKeypair])
