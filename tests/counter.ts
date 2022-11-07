@@ -22,6 +22,15 @@ describe("counter", () => {
         await initializeAccount(program, wallet1);
         await initializeAccount(program, wallet2);
     })
+    // Helper function
+    const getAllAccountsByAuthority = async (
+        accounts: anchor.AccountClient<Counter>,
+        authority: anchor.web3.PublicKey
+    ) => {
+        return await accounts.all([
+            {memcmp: {offset: 8, bytes: authority.toBase58()}}
+        ])
+    }
 
     const createWallet =
         async (connection: anchor.web3.Connection, funds: number): Promise<anchor.web3.Keypair> => {
@@ -79,18 +88,131 @@ describe("counter", () => {
         expect(accountWallet2Data[0].account.data.eq(new anchor.BN(0))).to.be.true;
 
     });
+    // Increase function test
+    it("Increase function works correctly.", async () => {
+        const accountBefore = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
 
+        await program.methods.increase()
+            .accounts({
+                myAccount: accountBefore.publicKey,
+                authority: wallet1.publicKey
+            })
+            .signers([wallet1])
+            .rpc();
 
+        const accountAfter = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
 
-    // Helper function
-    const getAllAccountsByAuthority = async (
-        accounts: anchor.AccountClient<Counter>,
-        authority: anchor.web3.PublicKey
-    ) => {
-        return await accounts.all([
-            {memcmp: {offset: 8, bytes: authority.toBase58()}}
-        ])
-    }
+        expect(accountAfter.account.data.eq(
+            accountBefore.account.data.add(new anchor.BN(1))
+        )).to.be.true;
+    });
+
+    it("Set function works correctly", async () => {
+        const accountBefore = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
+
+        // BN is u64 in rust
+        const setValue = new anchor.BN(5);
+
+        await program.methods.set(setValue)
+            .accounts({
+                myAccount: accountBefore.publicKey,
+                authority: wallet1.publicKey
+            })
+            .signers([wallet1])
+            .rpc();
+
+        const accountAfter = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
+
+        expect(accountAfter.account.data.eq(new anchor.BN(5))).to.be.true;
+    });
+
+    it("Decrease function works correctly.", async () => {
+
+        const accountBefore = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
+
+        const setValue = new anchor.BN(5);
+
+        await program.methods.set(setValue)
+            .accounts({
+                myAccount: accountBefore.publicKey,
+                authority: wallet1.publicKey
+            })
+            .signers([wallet1])
+            .rpc();
+
+        await program.methods.decrease()
+            .accounts({
+                myAccount: accountBefore.publicKey,
+                authority: wallet1.publicKey
+            })
+            .signers([wallet1])
+            .rpc();
+
+        const accountAfter = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
+
+        expect(accountAfter.account.data.eq(
+            setValue.sub(new anchor.BN(1))
+        )).to.be.true;
+    });
+
+    // Test if it can decrease below 0
+    // We assume that the tx fails
+    it("Cannot decrease below 0.", async () => {
+
+        const account = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet1.publicKey
+        ))[0];
+
+        await program.methods.set(new anchor.BN(0))
+            .accounts(
+                {
+                    myAccount: account.publicKey,
+                    authority: wallet1.publicKey,
+                }
+            )
+            .signers([wallet1])
+            .rpc();
+
+        // Expect 0 to be rejected
+        await expect(program.methods.decrease()
+            .accounts({
+                myAccount: account.publicKey,
+                authority: wallet1.publicKey
+            })
+            .signers([wallet1])
+            .rpc()
+        ).to.be.rejected;
+    });
+
+    // Testing Account Validation
+    it("Cannot modify accounts of other authorities.", async () => {
+        const account = (await getAllAccountsByAuthority(
+            program.account.myAccount, wallet2.publicKey
+        ))[0];
+
+        await expect(program.methods.set(new anchor.BN(1))
+            .accounts({
+                myAccount: account.publicKey,
+                authority: wallet2.publicKey
+            })
+            // sign with wallet 1, but with authority of wallet 2
+            .signers([wallet1])
+            .rpc()
+        ).to.be.rejected; // Expect to be rejected
+    });
+
 
 
 
